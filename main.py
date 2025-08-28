@@ -1,61 +1,87 @@
-import threading
 import cv2
 from deepface import DeepFace
 
-# Inicia a captura de vídeo pela webcam (usando DirectShow no Windows)
-cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+# Inicializa a captura de vídeo da webcam
+cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
 
-# Define a resolução da captura de vídeo
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+# Carrega a imagem de referência para comparação
+reference_img = cv2.imread("img/foto2.jpg")
 
-counter = 0   # Contador de frames
-face_match = False   # Variável para indicar se o rosto foi reconhecido ou não
+# Verifica se a imagem de referência foi carregada corretamente
+if reference_img is None:
+    print("Erro: Imagem de referência não encontrada. Verifique o caminho: img/reference.jpg")
+    exit()
 
-# Carrega a imagem de referência (que será comparada com os rostos detectados)
-reference_img = cv2.imread("img/reference.jpg")
+# Variáveis para controle de estado e contagem
+face_match = False
+counter = 0
+confidence = 0.0
 
-# Função para verificar se o rosto atual corresponde ao da referência
+# Pré-computa o embedding da imagem de referência para melhor performance
+try:
+    reference_embedding = DeepFace.represent(
+        reference_img,
+        model_name="Facenet512",      # Modelo de alta precisão para reconhecimento facial
+        detector_backend="mtcnn",     # Detector de faces mais preciso
+        enforce_detection=False       # Permite continuar mesmo se não detectar rostos
+    )[0]["embedding"]
+except Exception as e:
+    print("Erro ao processar imagem de referência:", e)
+    exit()
+
+# Função para verificar se há correspondência facial no frame atual
 def check_face(frame):
-    global face_match
+    global face_match, confidence
     try:
-        # Usa o DeepFace para comparar a imagem do frame com a imagem de referência
-        if DeepFace.verify(frame, reference_img.copy())['verified']:
-            face_match = True
-        else:
-            face_match = False
-    except ValueError:
-        # Caso não seja possível detectar rosto no frame, mantém como não correspondente
+        # Extrai embedding facial do frame atual
+        embedding_obj = DeepFace.represent(
+            frame,
+            model_name="Facenet512",
+            detector_backend="mtcnn",
+            enforce_detection=False
+        )
+        
+        # Se um rosto foi detectado, compara com a referência
+        if embedding_obj:
+            # Realiza a verificação facial comparando os embeddings
+            result = DeepFace.verify(
+                embedding_obj[0]["embedding"],
+                reference_embedding,
+                model_name="Facenet512",
+                detector_backend="skip"  # Omite detecção pois já temos os embeddings
+            )
+            face_match = result["verified"]
+            confidence = 1 - result["distance"]  # Calcula confiança baseada na distância
+    except Exception as e:
+        print("Erro na detecção facial:", e)
         face_match = False
 
-# Loop principal de captura de vídeo
+# Loop principal de processamento de vídeo
 while True:
-    ret, frame = cap.read()   # Lê um frame da webcam
-
-    if ret:
-        # A cada 30 frames, inicia uma thread para verificar o rosto
-        if counter % 30 == 0:
-            try:
-                threading.Thread(target=check_face, args=(frame.copy(),)).start()
-            except ValueError:
-                pass
-        counter += 1
-
-        # Exibe na tela a mensagem de acordo com o resultado da verificação
-        if face_match:
-            cv2.putText(frame, "Match!", (20, 450), cv2.FONT_HERSHEY_COMPLEX,
-                        2, (0, 255, 0), 3)   # Texto verde se reconhecer
-        else:
-            cv2.putText(frame, "NO Match!", (20, 450), cv2.FONT_HERSHEY_COMPLEX,
-                        2, (0, 0, 255), 3)   # Texto vermelho se não reconhecer
-
-        # Mostra o vídeo em uma janela
-        cv2.imshow("video", frame)
-
-    # Pressionar 'q' encerra o programa
-    key = cv2.waitKey(1)
-    if key == ord("q"):
+    # Captura frame da webcam
+    ret, frame = cap.read()
+    if not ret:
+        print("Falha ao capturar frame da webcam")
         break
 
-# Libera recursos
+    # Processa o frame a cada 15 quadros
+    if counter % 15 == 0:
+        check_face(frame.copy())
+    counter += 1
+
+    # Exibe o resultado na tela
+    status = "CORRESPONDENCIA" if face_match else "SEM CORRESPONDENCIA"
+    color = (0, 255, 0) if face_match else (0, 0, 255)
+    cv2.putText(frame, f"{status} ({confidence:.2%})", (20, 450), 
+                cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
+    # Mostra o frame processado
+    cv2.imshow("Reconhecimento Facial", frame)
+
+    # Encerra o loop ao pressionar a tecla 'q'
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
+
+# Libera os recursos da câmera e fecha janelas
+cap.release()
 cv2.destroyAllWindows()
