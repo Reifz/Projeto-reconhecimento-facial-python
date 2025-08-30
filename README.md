@@ -3,8 +3,18 @@
 ## Passos
 
 ### 1. Instale o pacote para ler faces
-  pip install opencv-python deepface (OBS: talvez seja necesário atualizar o pip "pip install --upgrade pip
-")
-  
+  python -m pip install --upgrade pip
+
+  pip install opencv-python
+
+  pip install deepface
+
+  pip install tf-keras
+ 
 ### 2. Crie uma pasta para imagens e coloque uma foto que será validada.s
   Ex: img/reference.jpg
+
+### 3. Verifique o indice da sua Camêra de teste
+cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)   ##0,1,2,3.....
+
+
